@@ -1,10 +1,11 @@
+from django.utils import timezone
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import render, get_object_or_404
 from django.http import Http404
 from django.urls import reverse
 from django.db.models import F
 from django.views import generic
-from .models import Question
+from .models import Choice, Question
 
 
 class IndexView(generic.ListView):
@@ -12,29 +13,50 @@ class IndexView(generic.ListView):
     context_object_name = "latest_question_list"
 
     def get_queryset(self):
-        return Question.objects.order_by('-pub_date')[:5]
+        return Question.objects.filter(pub_date__lte=timezone.now()).order_by('-pub_date')[:5]
 
 class DetailView(generic.DetailView):
     template_name = "polls/detail.html"
-    model = Question
+    def get_queryset(self):
+        return Question.objects.filter(pub_date__lte=timezone.now())
     
 class ResultsView(generic.DetailView):
     template_name = "polls/results.html"
-    model = Question    
+    def get_queryset(self):
+        return Question.objects.filter(pub_date__lte=timezone.now())  
 
 def vote(request, question_id):
+    """Record a vote for a published question."""
     question = get_object_or_404(Question, pk=question_id)
-    try:
-        selected_choice = question.choice_set.get(pk=request.POST['choice'])
-    except (KeyError, Question.choice_set.model.DoesNotExist):
-        return render(request, "polls/detail.html",{
-            "question": question, 
-            "error_message": "No choice selected."
-        },
+
+    if question.pub_date > timezone.now():
+        raise Http404("Cannot vote on future questions.")
+
+    choice_id = request.POST.get("choice")
+    if not choice_id:
+        return render(
+            request,
+            "polls/detail.html",
+            {
+                "question": question,
+                "error_message": "No choice selected.",
+            },
         )
-    else:
-        selected_choice.votes += F("votes")+1
-        selected_choice.save()
-        return HttpResponseRedirect(reverse("polls:results", args=(question.id,)))
- 
+
+    try:
+        selected_choice = question.choice_set.get(pk=choice_id)
+    except (Choice.DoesNotExist, ValueError):
+        return render(
+            request,
+            "polls/detail.html",
+            {
+                "question": question,
+                "error_message": "Choice does not exist.",
+            },
+        )
+
+    selected_choice.votes = F("votes") + 1
+    selected_choice.save()
+    return HttpResponseRedirect(reverse("polls:results", args=(question.id,)))
+
 
