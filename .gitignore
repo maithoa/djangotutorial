@@ -7,3 +7,6 @@ static/
 
 # Ignore database files
 db.sqlite3
+
+# Ignore environment variables
+.env
